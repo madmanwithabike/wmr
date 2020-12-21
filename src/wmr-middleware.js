@@ -124,9 +124,14 @@ export default function wmrMiddleware({
 	function bubbleUpdates(filename) {
 		// Delete file from the in-memory cache:
 		WRITE_CACHE.delete(filename);
+
+		filename = '/' + filename;
 		const mod = moduleGraph.get(filename);
+
+		if (!mod) return false;
+
 		if (mod.acceptingUpdates) {
-			pendingChanges.add('/' + filename);
+			pendingChanges.add(filename);
 		} else if (mod.dependents.size) {
 			mod.dependents.forEach(function (value) {
 				mod.stale = true;
@@ -136,6 +141,7 @@ export default function wmrMiddleware({
 			// We need a full-reload signal
 			return false;
 		}
+
 		return true;
 	}
 
@@ -147,11 +153,10 @@ export default function wmrMiddleware({
 		// Delete any generated CSS Modules mapping modules:
 		if (/\.module\.css$/.test(filename)) WRITE_CACHE.delete(filename + '.js');
 
+		if (!pendingChanges.size) setTimeout(flushChanges, 60);
 		const result = bubbleUpdates(filename);
 		if (!result) {
-			({ type: 'reload' });
-		} else if (!pendingChanges.size) {
-			setTimeout(flushChanges, 60);
+			onChange({ type: 'reload' });
 		}
 	});
 
@@ -372,11 +377,13 @@ export const TRANSFORMS = {
 					spec = `/@npm/${meta.module}${meta.path ? '/' + meta.path : ''}`;
 				}
 
-				mod.dependencies.add(spec);
-				if (!moduleGraph.has(spec)) {
-					moduleGraph.set(spec, { dependencies: new Set(), dependents: new Set(), acceptingUpdates: false });
+				const modSpec = spec.replace('../', '/').replace('./', '/');
+				mod.dependencies.add(modSpec);
+				if (!moduleGraph.has(modSpec)) {
+					moduleGraph.set(modSpec, { dependencies: new Set(), dependents: new Set(), acceptingUpdates: false });
 				}
-				const specModule = moduleGraph.get(spec);
+
+				const specModule = moduleGraph.get(modSpec);
 				specModule.dependents.add(importer);
 				if (specModule.stale) {
 					specModule.stale = false;
